@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Oso Cholo — Trivia 5 min</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Fredoka:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<div class="tweaks-panel" id="tweaks">
+  <h3>⚙ TWEAKS</h3>
+  <div class="tweak-row">
+    <label>VELOCIDAD <span id="tw-speed-val">1.0x</span></label>
+    <input type="range" id="tw-speed" min="0.5" max="4" step="0.1" value="1"/>
+  </div>
+  <div class="tweak-row">
+    <label>FPS SPRITE OSO <span id="tw-fps-val">8</span></label>
+    <input type="range" id="tw-fps" min="4" max="20" step="1" value="8"/>
+  </div>
+  <div class="tweak-row">
+    <button id="tw-seed-rank">AGREGAR RANKING DEMO</button>
+  </div>
+  <div class="tweak-row">
+    <button id="tw-reset">RESET TODO</button>
+  </div>
+</div>
+
+<script src="components/ios-frame.jsx" type="text/babel"></script>
+<script src="components/questions.jsx" type="text/babel"></script>
+<script src="components/sloth-sprite.jsx" type="text/babel"></script>
+<script src="components/home-screen.jsx" type="text/babel"></script>
+<script src="components/game-screen.jsx" type="text/babel"></script>
+<script src="components/result-screen.jsx" type="text/babel"></script>
+<script src="components/ranking-screen.jsx" type="text/babel"></script>
+
+<script type="text/babel">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "speed": 1.0,
+  "spriteFps": 8
+}/*EDITMODE-END*/;
+
+const RANK_KEY = 'oso-ranking-v2';
+const loadRanking = () => {
+  try { return JSON.parse(localStorage.getItem(RANK_KEY) || '[]'); }
+  catch { return []; }
+};
+const saveRanking = (list) => localStorage.setItem(RANK_KEY, JSON.stringify(list));
+
+function App() {
+  const [screen, setScreen] = React.useState('home');
+  const [played, setPlayed] = React.useState(() => parseInt(localStorage.getItem('oso-played') || '0'));
+  const [lastScore, setLastScore] = React.useState(0);
+  const [isNewBest, setIsNewBest] = React.useState(false);
+  const [highlightIdx, setHighlightIdx] = React.useState(-1);
+  const [ranking, setRanking] = React.useState(loadRanking);
+  const [speed, setSpeed] = React.useState(TWEAK_DEFAULTS.speed);
+
+  const best = ranking[0]?.score || 0;
+
+  // Tweaks wiring
+  React.useEffect(() => {
+    const panel = document.getElementById('tweaks');
+    const onMsg = (e) => {
+      if (!e.data) return;
+      if (e.data.type === '__activate_edit_mode') panel.classList.add('active');
+      if (e.data.type === '__deactivate_edit_mode') panel.classList.remove('active');
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+
+    const speedEl = document.getElementById('tw-speed');
+    const speedVal = document.getElementById('tw-speed-val');
+    speedEl.addEventListener('input', () => {
+      const v = parseFloat(speedEl.value);
+      setSpeed(v);
+      speedVal.textContent = v.toFixed(1) + 'x';
+      window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { speed: v } }, '*');
+    });
+
+    const fpsEl = document.getElementById('tw-fps');
+    const fpsVal = document.getElementById('tw-fps-val');
+    fpsEl.addEventListener('input', () => {
+      const v = parseInt(fpsEl.value);
+      fpsVal.textContent = String(v);
+      document.documentElement.style.setProperty('--sprite-fps', v);
+      window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { spriteFps: v } }, '*');
+    });
+
+    document.getElementById('tw-reset').addEventListener('click', () => {
+      localStorage.removeItem(RANK_KEY);
+      localStorage.removeItem('oso-played');
+      localStorage.removeItem('oso-name');
+      setRanking([]);
+      setPlayed(0);
+      setScreen('home');
+    });
+
+    document.getElementById('tw-seed-rank').addEventListener('click', () => {
+      const demo = [
+        { name: 'Perezosa 🌿', score: 142, date: 'hoy' },
+        { name: 'Chad', score: 98, date: 'ayer' },
+        { name: 'Karen', score: 71, date: 'ayer' },
+        { name: 'Brandon', score: 45, date: 'hace 2d' },
+        { name: 'Influencer', score: 22, date: 'hace 3d' },
+      ];
+      const merged = [...ranking, ...demo].sort((a,b) => b.score - a.score).slice(0, 10);
+      setRanking(merged);
+      saveRanking(merged);
+    });
+
+    return () => window.removeEventListener('message', onMsg);
+  }, [ranking]);
+
+  const onGameEnd = (score) => {
+    setLastScore(score);
+    const newPlayed = played + 1;
+    setPlayed(newPlayed);
+    localStorage.setItem('oso-played', String(newPlayed));
+    setIsNewBest(score > best);
+    setScreen('result');
+  };
+
+  const saveToRanking = (name) => {
+    const entry = {
+      name,
+      score: lastScore,
+      date: new Date().toLocaleDateString('es', { day: '2-digit', month: 'short' }),
+    };
+    const merged = [...ranking, entry].sort((a, b) => b.score - a.score).slice(0, 10);
+    const idx = merged.findIndex(e => e === entry);
+    setHighlightIdx(idx);
+    setRanking(merged);
+    saveRanking(merged);
+  };
+
+  return (
+    <div className="stage">
+      <IOSDevice width={402} height={874} dark={false}>
+        <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }} data-screen-label={`App · ${screen}`}>
+          {screen === 'home' && (
+            <HomeScreen
+              best={best}
+              totalPlayed={played}
+              onPlay={() => setScreen('game')}
+              onOpenRanking={() => { setHighlightIdx(-1); setScreen('ranking'); }}
+            />
+          )}
+          {screen === 'game' && (
+            <GameScreen
+              speedMultiplier={speed}
+              onEnd={onGameEnd}
+            />
+          )}
+          {screen === 'result' && (
+            <ResultScreen
+              score={lastScore}
+              best={best}
+              isNewBest={isNewBest}
+              onSave={saveToRanking}
+              onHome={() => setScreen('home')}
+              onViewRanking={() => setScreen('ranking')}
+            />
+          )}
+          {screen === 'ranking' && (
+            <RankingScreen
+              scores={ranking}
+              highlightIdx={highlightIdx}
+              onBack={() => setScreen('home')}
+            />
+          )}
+        </div>
+      </IOSDevice>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+
+</body>
+</html>
